@@ -33,63 +33,121 @@ serve(async (req) => {
 
     const { fileUrl } = await req.json();
 
-    console.log('Processing upload for user:', user.id);
+    console.log('Processing upload for user:', user.id, 'File URL:', fileUrl);
 
-    // Mock OCR extraction
-    const extractTextFromFile = async (_fileUrl: string): Promise<string> => {
-      return `
-Example Banana Bread
-Yield: 1 loaf
-Time: 1h 10m
+    // Get signed URL for the uploaded image
+    const filePath = fileUrl.split('/').pop();
+    const { data: signedUrlData, error: signedUrlError } = await supabase
+      .storage
+      .from('recipe-cards')
+      .createSignedUrl(`${user.id}/${filePath}`, 3600);
 
-Ingredients:
-- 1 1/2 cups all-purpose flour
-- 1 tsp baking soda
-- 1/2 tsp salt
-- 3 ripe bananas, mashed
-- 1/2 cup melted butter
-- 3/4 cup sugar
-- 1 egg, beaten
+    if (signedUrlError) {
+      console.error('Signed URL error:', signedUrlError);
+      throw new Error('Failed to get signed URL');
+    }
 
-Steps:
-1) Preheat oven to 350F.
-2) Mix dry ingredients.
-3) Mix wet ingredients and fold into dry.
-4) Bake 55-60 minutes.
-`;
-    };
+    console.log('Using Lovable AI to extract recipe from image');
 
-    // Mock parser
-    const parseRecipeFromOcr = (text: string) => {
-      return {
-        title: "Example Banana Bread",
-        yield: "1 loaf",
-        total_time: "1h 10m",
-        ingredients: [
-          { qty: 1.5, unit: "cups", name: "all-purpose flour" },
-          { qty: 1, unit: "tsp", name: "baking soda" },
-          { qty: 0.5, unit: "tsp", name: "salt" },
-          { qty: 3, unit: "", name: "ripe bananas", mod: "mashed" },
-          { qty: 0.5, unit: "cup", name: "butter", mod: "melted" },
-          { qty: 0.75, unit: "cup", name: "sugar" },
-          { qty: 1, unit: "", name: "egg", mod: "beaten" }
+    // Use Lovable AI with vision to extract recipe data
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    if (!LOVABLE_API_KEY) {
+      throw new Error('LOVABLE_API_KEY not configured');
+    }
+
+    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Extract the recipe information from this recipe card image. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions.'
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: signedUrlData.signedUrl
+                }
+              }
+            ]
+          }
         ],
-        steps: [
-          "Preheat oven to 350°F (175°C).",
-          "Combine dry ingredients.",
-          "Mix wet ingredients; fold into dry.",
-          "Bake 55–60 minutes."
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'extract_recipe',
+              description: 'Extract structured recipe data from the image',
+              parameters: {
+                type: 'object',
+                properties: {
+                  title: { type: 'string' },
+                  yield: { type: 'string' },
+                  total_time: { type: 'string' },
+                  ingredients: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        qty: { type: 'number' },
+                        unit: { type: 'string' },
+                        name: { type: 'string' },
+                        mod: { type: 'string' }
+                      },
+                      required: ['name']
+                    }
+                  },
+                  steps: {
+                    type: 'array',
+                    items: { type: 'string' }
+                  },
+                  notes: { type: 'string' }
+                },
+                required: ['title', 'ingredients', 'steps']
+              }
+            }
+          }
         ],
-        notes: ""
-      };
-    };
+        tool_choice: { type: 'function', function: { name: 'extract_recipe' } }
+      })
+    });
+
+    if (!aiResponse.ok) {
+      const errorText = await aiResponse.text();
+      console.error('AI Gateway error:', aiResponse.status, errorText);
+      throw new Error(`AI Gateway error: ${aiResponse.status}`);
+    }
+
+    const aiData = await aiResponse.json();
+    console.log('AI response:', JSON.stringify(aiData));
+
+    // Extract the recipe data from tool call
+    const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
+    if (!toolCall) {
+      throw new Error('No tool call in AI response');
+    }
+
+    const parsedRecipe = JSON.parse(toolCall.function.arguments);
+    console.log('Parsed recipe:', parsedRecipe);
+
+    const extractedOcrText = `${parsedRecipe.title}\n\nIngredients:\n${parsedRecipe.ingredients.map((i: any) => 
+      `- ${i.qty || ''} ${i.unit || ''} ${i.name}${i.mod ? ` (${i.mod})` : ''}`
+    ).join('\n')}\n\nSteps:\n${parsedRecipe.steps.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}`;
 
     // 1. Create recipe
     const { data: recipe, error: recipeError } = await supabase
       .from('recipes')
       .insert({
         user_id: user.id,
-        title: 'Example Banana Bread'
+        title: parsedRecipe.title
       })
       .select()
       .single();
@@ -117,16 +175,13 @@ Steps:
       throw jobError;
     }
 
-    // 3. Extract text (mock OCR)
-    const ocrText = await extractTextFromFile(fileUrl);
-
-    // 4. Save OCR version
+    // 3. Save OCR version
     const { error: ocrVersionError } = await supabase
       .from('recipe_versions')
       .insert({
         recipe_id: recipe.id,
         kind: 'ocr',
-        payload: { raw_text: ocrText }
+        payload: { raw_text: extractedOcrText }
       });
 
     if (ocrVersionError) {
@@ -134,10 +189,7 @@ Steps:
       throw ocrVersionError;
     }
 
-    // 5. Parse recipe
-    const parsedRecipe = parseRecipeFromOcr(ocrText);
-
-    // 6. Save parsed version
+    // 4. Save parsed version
     const { error: parsedVersionError } = await supabase
       .from('recipe_versions')
       .insert({
@@ -151,7 +203,7 @@ Steps:
       throw parsedVersionError;
     }
 
-    // 7. Save ingredients
+    // 5. Save ingredients
     const ingredientsToInsert = parsedRecipe.ingredients.map((ing: any) => ({
       recipe_id: recipe.id,
       name: ing.name,
@@ -169,7 +221,7 @@ Steps:
       throw ingredientsError;
     }
 
-    // 8. Update job status
+    // 6. Update job status
     await supabase
       .from('jobs')
       .update({ status: 'completed', completed_at: new Date().toISOString() })

@@ -3,11 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RecipeCard } from "@/components/RecipeCard";
+import { RecipeUpload } from "@/components/RecipeUpload";
 import { Recipe } from "@/lib/types";
 import { toast } from "sonner";
-import { LogOut, Plus, Search, User } from "lucide-react";
+import { LogOut, Search, User } from "lucide-react";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -61,21 +61,9 @@ const Dashboard = () => {
     navigate("/auth");
   };
 
-  const handleUseSampleCard = async () => {
-    setLoading(true);
-    
-    const { data: functionData, error: functionError } = await supabase.functions.invoke('upload-recipe', {
-      body: { fileUrl: 'sample-card' }
-    });
-
-    if (functionError) {
-      toast.error("Failed to process sample recipe");
-      console.error(functionError);
-    } else {
-      toast.success("Sample recipe processed!");
-      navigate(`/recipes/${functionData.recipeId}`);
-    }
-    setLoading(false);
+  const handleUploadComplete = (recipeId: string) => {
+    loadRecipes();
+    navigate(`/recipes/${recipeId}`);
   };
 
   const filteredRecipes = recipes.filter(recipe =>
@@ -105,28 +93,9 @@ const Dashboard = () => {
           </div>
         </div>
 
-        <Card className="mb-8 shadow-medium">
-          <CardHeader>
-            <CardTitle>Upload Recipe</CardTitle>
-            <CardDescription>
-              Start by uploading a recipe card to convert to gluten-free
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-4">
-              <Button 
-                onClick={handleUseSampleCard}
-                disabled={loading}
-                variant="default"
-                size="lg"
-                className="flex-1"
-              >
-                <Plus className="w-5 h-5 mr-2" />
-                {loading ? "Processing..." : "Use Sample Card"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="mb-8">
+          <RecipeUpload onUploadComplete={handleUploadComplete} />
+        </div>
 
         <div className="mb-6">
           <div className="relative">
