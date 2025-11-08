@@ -18,13 +18,16 @@ export const RecipeUpload = ({ onUploadComplete }: RecipeUploadProps) => {
     const file = event.target.files?.[0];
     if (file) {
       // Validate file type
-      if (!file.type.startsWith('image/')) {
-        toast.error("Please select an image file");
+      const isImage = file.type.startsWith('image/');
+      const isPDF = file.type === 'application/pdf';
+      
+      if (!isImage && !isPDF) {
+        toast.error("Please select an image or PDF file");
         return;
       }
       // Validate file size (max 10MB)
       if (file.size > 10 * 1024 * 1024) {
-        toast.error("Image must be smaller than 10MB");
+        toast.error("File must be smaller than 10MB");
         return;
       }
       setSelectedFile(file);
@@ -88,7 +91,7 @@ export const RecipeUpload = ({ onUploadComplete }: RecipeUploadProps) => {
       <CardHeader>
         <CardTitle>Upload Recipe Card</CardTitle>
         <CardDescription>
-          Upload an image of a recipe card to convert it to gluten-free
+          Upload an image or PDF of a recipe card to convert it to gluten-free
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -96,7 +99,7 @@ export const RecipeUpload = ({ onUploadComplete }: RecipeUploadProps) => {
           <div className="flex items-center gap-4">
             <Input
               type="file"
-              accept="image/*"
+              accept="image/*,application/pdf"
               onChange={handleFileSelect}
               disabled={uploading}
               className="flex-1"

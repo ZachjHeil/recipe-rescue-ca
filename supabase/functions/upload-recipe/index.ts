@@ -47,9 +47,9 @@ serve(async (req) => {
       throw new Error('Failed to get signed URL');
     }
 
-    console.log('Using Lovable AI to extract recipe from image');
+    console.log('Using Lovable AI to extract recipe from document');
 
-    // Use Lovable AI with vision to extract recipe data
+    // Use Lovable AI with vision to extract recipe data (supports both images and PDFs)
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY not configured');
@@ -69,7 +69,7 @@ serve(async (req) => {
             content: [
               {
                 type: 'text',
-                text: 'Extract the recipe information from this recipe card image. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions.'
+                text: 'Extract the recipe information from this recipe card (image or PDF). Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions. If this is a PDF with multiple recipes, extract only the first complete recipe.'
               },
               {
                 type: 'image_url',
