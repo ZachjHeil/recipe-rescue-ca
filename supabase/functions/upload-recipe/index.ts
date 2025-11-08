@@ -54,16 +54,43 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    // For images, use vision model directly
+    // Fetch the image and convert to base64
+    const imageResponse = await fetch(signedUrlData.signedUrl);
+    if (!imageResponse.ok) {
+      throw new Error('Failed to fetch image file');
+    }
+    
+    const imageBuffer = await imageResponse.arrayBuffer();
+    const bytes = new Uint8Array(imageBuffer);
+    
+    // Convert to base64 in chunks
+    let binary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      binary += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+    const base64Data = btoa(binary);
+    
+    // Detect image mime type from file extension
+    const fileExt = filePath.toLowerCase().split('.').pop();
+    const mimeTypes: Record<string, string> = {
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'webp': 'image/webp'
+    };
+    const mimeType = mimeTypes[fileExt || ''] || 'image/jpeg';
+
     const messageContent = [
       {
         type: 'text',
-        text: 'Extract the recipe information from this recipe card. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions.'
+        text: 'Extract the recipe information from this recipe card image. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions.'
       },
       {
         type: 'image_url',
         image_url: {
-          url: signedUrlData.signedUrl
+          url: `data:${mimeType};base64,${base64Data}`
         }
       }
     ];
