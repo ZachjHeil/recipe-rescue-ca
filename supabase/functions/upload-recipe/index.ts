@@ -34,9 +34,18 @@ serve(async (req) => {
     const { fileUrl } = await req.json();
 
     console.log('Processing upload for user:', user.id, 'File URL:', fileUrl);
+    
+    // Validate file type - only accept images
+    const filePath = fileUrl.split('/').pop();
+    const fileExt = filePath.toLowerCase().split('.').pop();
+    const validImageExts = ['jpg', 'jpeg', 'png', 'webp'];
+    
+    if (!validImageExts.includes(fileExt || '')) {
+      console.error('Invalid file type:', fileExt);
+      throw new Error('Only image files (JPG, PNG, WEBP) are supported. PDF support is coming soon.');
+    }
 
     // Get signed URL for the uploaded image
-    const filePath = fileUrl.split('/').pop();
     const { data: signedUrlData, error: signedUrlError } = await supabase
       .storage
       .from('recipe-cards')
@@ -72,8 +81,7 @@ serve(async (req) => {
     }
     const base64Data = btoa(binary);
     
-    // Detect image mime type from file extension
-    const fileExt = filePath.toLowerCase().split('.').pop();
+    // Detect image mime type from file extension (fileExt already declared above)
     const mimeTypes: Record<string, string> = {
       'jpg': 'image/jpeg',
       'jpeg': 'image/jpeg',
@@ -88,9 +96,10 @@ serve(async (req) => {
         text: 'Extract the recipe information from this recipe card image. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions.'
       },
       {
-        type: 'image_url',
-        image_url: {
-          url: `data:${mimeType};base64,${base64Data}`
+        type: 'inline_data',
+        inline_data: {
+          mime_type: mimeType,
+          data: base64Data
         }
       }
     ];
