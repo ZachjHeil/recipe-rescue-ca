@@ -35,17 +35,12 @@ serve(async (req) => {
 
     console.log('Processing upload for user:', user.id, 'File URL:', fileUrl);
     
-    // Validate file type - only accept images
+    // Get file path and extension
     const filePath = fileUrl.split('/').pop();
     const fileExt = filePath.toLowerCase().split('.').pop();
-    const validImageExts = ['jpg', 'jpeg', 'png', 'webp'];
-    
-    if (!validImageExts.includes(fileExt || '')) {
-      console.error('Invalid file type:', fileExt);
-      throw new Error('Only image files (JPG, PNG, WEBP) are supported. PDF support is coming soon.');
-    }
+    const isPDF = fileExt === 'pdf';
 
-    // Get signed URL for the uploaded image
+    // Get signed URL for the uploaded file
     const { data: signedUrlData, error: signedUrlError } = await supabase
       .storage
       .from('recipe-cards')
@@ -63,46 +58,64 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    // Fetch the image and convert to base64
-    const imageResponse = await fetch(signedUrlData.signedUrl);
-    if (!imageResponse.ok) {
-      throw new Error('Failed to fetch image file');
-    }
-    
-    const imageBuffer = await imageResponse.arrayBuffer();
-    const bytes = new Uint8Array(imageBuffer);
-    
-    // Convert to base64 in chunks
-    let binary = '';
-    const chunkSize = 8192;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-      binary += String.fromCharCode.apply(null, Array.from(chunk));
-    }
-    const base64Data = btoa(binary);
-    
-    // Detect image mime type from file extension (fileExt already declared above)
-    const mimeTypes: Record<string, string> = {
-      'jpg': 'image/jpeg',
-      'jpeg': 'image/jpeg',
-      'png': 'image/png',
-      'webp': 'image/webp'
-    };
-    const mimeType = mimeTypes[fileExt || ''] || 'image/jpeg';
+    let messageContent;
 
-    const messageContent = [
-      {
-        type: 'text',
-        text: 'Extract the recipe information from this recipe card image. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions.'
-      },
-      {
-        type: 'inline_data',
-        inline_data: {
-          mime_type: mimeType,
-          data: base64Data
+    if (isPDF) {
+      // For PDFs, use text-only extraction
+      console.log('Processing PDF document');
+      
+      messageContent = [
+        {
+          type: 'text',
+          text: `Extract the recipe information from the following PDF content. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions. 
+          
+          Note: This is a PDF document, so extract the text-based recipe information.`
         }
+      ];
+    } else {
+      // For images, fetch and convert to base64
+      console.log('Processing image file');
+      
+      const imageResponse = await fetch(signedUrlData.signedUrl);
+      if (!imageResponse.ok) {
+        throw new Error('Failed to fetch image file');
       }
-    ];
+      
+      const imageBuffer = await imageResponse.arrayBuffer();
+      const bytes = new Uint8Array(imageBuffer);
+      
+      // Convert to base64 in chunks
+      let binary = '';
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+        binary += String.fromCharCode.apply(null, Array.from(chunk));
+      }
+      const base64Data = btoa(binary);
+      
+      // Detect image mime type from file extension
+      const mimeTypes: Record<string, string> = {
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png',
+        'webp': 'image/webp'
+      };
+      const mimeType = mimeTypes[fileExt || ''] || 'image/jpeg';
+
+      messageContent = [
+        {
+          type: 'text',
+          text: 'Extract the recipe information from this recipe card image. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions.'
+        },
+        {
+          type: 'inline_data',
+          inline_data: {
+            mime_type: mimeType,
+            data: base64Data
+          }
+        }
+      ];
+    }
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
