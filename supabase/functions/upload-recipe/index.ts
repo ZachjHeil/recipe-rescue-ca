@@ -49,61 +49,24 @@ serve(async (req) => {
 
     console.log('Using Lovable AI to extract recipe from document');
 
-    // Check if file is PDF or image
-    const isPDF = filePath.toLowerCase().endsWith('.pdf');
-    
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    let messageContent;
-    
-    if (isPDF) {
-      // For PDFs, fetch the file and convert to base64 in chunks
-      const fileResponse = await fetch(signedUrlData.signedUrl);
-      if (!fileResponse.ok) {
-        throw new Error('Failed to fetch PDF file');
-      }
-      const fileBuffer = await fileResponse.arrayBuffer();
-      const bytes = new Uint8Array(fileBuffer);
-      
-      // Convert to base64 in chunks to avoid stack overflow
-      let binary = '';
-      const chunkSize = 8192;
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-        binary += String.fromCharCode.apply(null, Array.from(chunk));
-      }
-      const base64Data = btoa(binary);
-      
-      messageContent = [
-        {
-          type: 'text',
-          text: 'Extract the recipe information from this recipe card PDF. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions. If this PDF has multiple recipes, extract only the first complete recipe.'
-        },
-        {
-          type: 'image_url',
-          image_url: {
-            url: `data:application/pdf;base64,${base64Data}`
-          }
+    // For images, use vision model directly
+    const messageContent = [
+      {
+        type: 'text',
+        text: 'Extract the recipe information from this recipe card. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions.'
+      },
+      {
+        type: 'image_url',
+        image_url: {
+          url: signedUrlData.signedUrl
         }
-      ];
-    } else {
-      // For images, use the signed URL directly
-      messageContent = [
-        {
-          type: 'text',
-          text: 'Extract the recipe information from this recipe card image. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions.'
-        },
-        {
-          type: 'image_url',
-          image_url: {
-            url: signedUrlData.signedUrl
-          }
-        }
-      ];
-    }
+      }
+    ];
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
