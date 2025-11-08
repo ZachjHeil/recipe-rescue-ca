@@ -60,13 +60,22 @@ serve(async (req) => {
     let messageContent;
     
     if (isPDF) {
-      // For PDFs, fetch the file and convert to base64
+      // For PDFs, fetch the file and convert to base64 in chunks
       const fileResponse = await fetch(signedUrlData.signedUrl);
       if (!fileResponse.ok) {
         throw new Error('Failed to fetch PDF file');
       }
       const fileBuffer = await fileResponse.arrayBuffer();
-      const base64Data = btoa(String.fromCharCode(...new Uint8Array(fileBuffer)));
+      const bytes = new Uint8Array(fileBuffer);
+      
+      // Convert to base64 in chunks to avoid stack overflow
+      let binary = '';
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+        binary += String.fromCharCode.apply(null, Array.from(chunk));
+      }
+      const base64Data = btoa(binary);
       
       messageContent = [
         {
