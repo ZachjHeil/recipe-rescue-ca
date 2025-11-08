@@ -49,10 +49,51 @@ serve(async (req) => {
 
     console.log('Using Lovable AI to extract recipe from document');
 
-    // Use Lovable AI with vision to extract recipe data (supports both images and PDFs)
+    // Check if file is PDF or image
+    const isPDF = filePath.toLowerCase().endsWith('.pdf');
+    
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY not configured');
+    }
+
+    let messageContent;
+    
+    if (isPDF) {
+      // For PDFs, fetch the file and convert to base64
+      const fileResponse = await fetch(signedUrlData.signedUrl);
+      if (!fileResponse.ok) {
+        throw new Error('Failed to fetch PDF file');
+      }
+      const fileBuffer = await fileResponse.arrayBuffer();
+      const base64Data = btoa(String.fromCharCode(...new Uint8Array(fileBuffer)));
+      
+      messageContent = [
+        {
+          type: 'text',
+          text: 'Extract the recipe information from this recipe card PDF. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions. If this PDF has multiple recipes, extract only the first complete recipe.'
+        },
+        {
+          type: 'image_url',
+          image_url: {
+            url: `data:application/pdf;base64,${base64Data}`
+          }
+        }
+      ];
+    } else {
+      // For images, use the signed URL directly
+      messageContent = [
+        {
+          type: 'text',
+          text: 'Extract the recipe information from this recipe card image. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions.'
+        },
+        {
+          type: 'image_url',
+          image_url: {
+            url: signedUrlData.signedUrl
+          }
+        }
+      ];
     }
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -66,18 +107,7 @@ serve(async (req) => {
         messages: [
           {
             role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'Extract the recipe information from this recipe card (image or PDF). Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions. If this is a PDF with multiple recipes, extract only the first complete recipe.'
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: signedUrlData.signedUrl
-                }
-              }
-            ]
+            content: messageContent
           }
         ],
         tools: [
