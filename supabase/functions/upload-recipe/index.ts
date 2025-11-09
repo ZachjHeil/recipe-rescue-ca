@@ -52,6 +52,7 @@ serve(async (req) => {
     }
 
     console.log('Using Lovable AI to extract recipe from document');
+    console.log('File type:', isPDF ? 'PDF' : 'Image', 'File extension:', fileExt);
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
@@ -75,6 +76,8 @@ serve(async (req) => {
       binary += String.fromCharCode.apply(null, Array.from(chunk));
     }
     const base64Data = btoa(binary);
+    
+    console.log('Base64 data length:', base64Data.length, 'bytes');
     
     // Detect mime type from file extension
     const mimeTypes: Record<string, string> = {
@@ -109,7 +112,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: isPDF ? 'google/gemini-2.5-pro' : 'google/gemini-2.5-flash',
         messages: [
           {
             role: 'user',
@@ -159,11 +162,11 @@ serve(async (req) => {
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
       console.error('AI Gateway error:', aiResponse.status, errorText);
-      throw new Error(`AI Gateway error: ${aiResponse.status}`);
+      throw new Error(`AI Gateway error: ${aiResponse.status} - ${errorText}`);
     }
 
     const aiData = await aiResponse.json();
-    console.log('AI response:', JSON.stringify(aiData));
+    console.log('AI response received, usage:', JSON.stringify(aiData.usage));
 
     // Extract the recipe data from tool call
     const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
