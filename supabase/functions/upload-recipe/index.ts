@@ -58,64 +58,49 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    let messageContent;
-
-    if (isPDF) {
-      // For PDFs, use text-only extraction
-      console.log('Processing PDF document');
-      
-      messageContent = [
-        {
-          type: 'text',
-          text: `Extract the recipe information from the following PDF content. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions. 
-          
-          Note: This is a PDF document, so extract the text-based recipe information.`
-        }
-      ];
-    } else {
-      // For images, fetch and convert to base64
-      console.log('Processing image file');
-      
-      const imageResponse = await fetch(signedUrlData.signedUrl);
-      if (!imageResponse.ok) {
-        throw new Error('Failed to fetch image file');
-      }
-      
-      const imageBuffer = await imageResponse.arrayBuffer();
-      const bytes = new Uint8Array(imageBuffer);
-      
-      // Convert to base64 in chunks
-      let binary = '';
-      const chunkSize = 8192;
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-        binary += String.fromCharCode.apply(null, Array.from(chunk));
-      }
-      const base64Data = btoa(binary);
-      
-      // Detect image mime type from file extension
-      const mimeTypes: Record<string, string> = {
-        'jpg': 'image/jpeg',
-        'jpeg': 'image/jpeg',
-        'png': 'image/png',
-        'webp': 'image/webp'
-      };
-      const mimeType = mimeTypes[fileExt || ''] || 'image/jpeg';
-
-      messageContent = [
-        {
-          type: 'text',
-          text: 'Extract the recipe information from this recipe card image. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions.'
-        },
-        {
-          type: 'inline_data',
-          inline_data: {
-            mime_type: mimeType,
-            data: base64Data
-          }
-        }
-      ];
+    // Fetch the file and convert to base64
+    const fileResponse = await fetch(signedUrlData.signedUrl);
+    if (!fileResponse.ok) {
+      throw new Error('Failed to fetch file');
     }
+    
+    const fileBuffer = await fileResponse.arrayBuffer();
+    const bytes = new Uint8Array(fileBuffer);
+    
+    // Convert to base64 in chunks
+    let binary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      binary += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+    const base64Data = btoa(binary);
+    
+    // Detect mime type from file extension
+    const mimeTypes: Record<string, string> = {
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'webp': 'image/webp',
+      'pdf': 'application/pdf'
+    };
+    const mimeType = mimeTypes[fileExt || ''] || (isPDF ? 'application/pdf' : 'image/jpeg');
+
+    const messageContent = [
+      {
+        type: 'text',
+        text: isPDF 
+          ? 'Extract the recipe information from this PDF recipe card. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions.'
+          : 'Extract the recipe information from this recipe card image. Include title, yield, time, ingredients (with quantities, units, names, and modifiers), and step-by-step instructions.'
+      },
+      {
+        type: 'inline_data',
+        inline_data: {
+          mime_type: mimeType,
+          data: base64Data
+        }
+      }
+    ];
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
